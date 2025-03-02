@@ -6,11 +6,15 @@ const app = express();
 const PORT = 5001; // Ensure this matches the port in your frontend requests
 
 // Configure CORS to allow requests from your frontend
-app.use(cors({
-    origin: 'http://localhost:3000', // Allow requests from this origin
-    methods: ['GET', 'POST', 'PUT', 'DELETE'], // Allow these HTTP methods
-    credentials: true // Allow cookies and credentials (if needed)
-}));
+app.use((req, res, next) => {
+    res.header('Access-Control-Allow-Origin', '*'); // Allow all domains
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    if (req.method === 'OPTIONS') {
+        return res.sendStatus(204);
+    }
+    next();
+});
 
 app.use(express.json());
 
