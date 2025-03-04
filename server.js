@@ -10,8 +10,7 @@ const app = express();
 const PORT = 5001;
 
 // Initialize Firebase Admin SDK
-const serviceAccount = require('/Users/risheshgangwar/Instantly dashboard front + backend/instantly-dashboard-firebase-adminsdk-fbsvc-3c37b82e50.json'); // Replace with your service account file path
-
+const serviceAccount = require('./instantly-dashboard-firebase-adminsdk-fbsvc-3c37b82e50.json');
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
 });
