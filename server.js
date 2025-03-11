@@ -31,50 +31,48 @@ app.use((req, res, next) => {
 
 const API_KEY = 'MWYzODNlMWYtYmM4YS00YjQ5LWExMDUtNzQ0MmZkMmRiODJhOkVqREpJSldjSFZuYQ==';
 
-// Endpoint to register a new user
-app.post('/api/register', async (req, res) => {
-  const { email, password } = req.body;
+// Middleware to verify Firebase ID token
+const verifyToken = async (req, res, next) => {
+  const idToken = req.headers.authorization?.split('Bearer ')[1]; // Extract token from Authorization header
 
-  if (!email || !password) {
-    return res.status(400).json({ error: 'Email and password are required' });
+  if (!idToken) {
+    return res.status(401).json({ error: 'Unauthorized: No token provided' });
   }
 
   try {
-    const userRecord = await admin.auth().createUser({
-      email,
-      password,
+    const decodedToken = await admin.auth().verifyIdToken(idToken);
+    req.user = decodedToken; // Attach the decoded user information to the request object
+    next();
+  } catch (error) {
+    console.error('Error verifying token:', error);
+    res.status(401).json({ error: 'Unauthorized: Invalid token' });
+  }
+};
+
+// Function to fetch campaign details
+const fetchCampaignDetails = async (campaignId) => {
+  try {
+    const response = await axios.get(`https://api.instantly.ai/api/v2/campaigns?limit=10&starting_after=${campaignId}`, {
+      headers: {
+        Authorization: `Bearer ${API_KEY}`,
+      },
     });
 
-    console.log('Successfully created new user:', userRecord.uid);
-    res.status(201).json({ message: 'User registered successfully', uid: userRecord.uid });
+    // Check if the response contains the campaigns array
+    if (response.data && Array.isArray(response.data.campaigns)) {
+      const campaign = response.data.campaigns.find((c) => c.id === campaignId);
+      return campaign ? { status: campaign.status, email_list: campaign.email_list } : null;
+    } else {
+      console.error('Unexpected API response structure:', response.data);
+      return null;
+    }
   } catch (error) {
-    console.error('Error creating new user:', error);
-    res.status(500).json({ error: 'Failed to register user' });
+    console.error('Failed to fetch campaign details:', error.response?.data || error.message);
+    return null;
   }
-});
+};
 
-// Endpoint to login a user
-app.post('/api/login', async (req, res) => {
-  const { email, password } = req.body;
-
-  if (!email || !password) {
-    return res.status(400).json({ error: 'Email and password are required' });
-  }
-
-  try {
-    const userRecord = await admin.auth().getUserByEmail(email);
-
-    // In a real-world scenario, you would verify the password here using Firebase Authentication
-    // For simplicity, we assume the password is correct and return a success response
-    console.log('User logged in successfully:', userRecord.uid);
-    res.status(200).json({ message: 'User logged in successfully', uid: userRecord.uid });
-  } catch (error) {
-    console.error('Error logging in user:', error);
-    res.status(401).json({ error: 'Invalid email or password' });
-  }
-});
-
-// Endpoint to fetch all campaigns
+// Endpoint to fetch all campaigns (protected by token verification)
 app.get('/api/campaigns', async (req, res) => {
   try {
     const response = await axios.get('https://api.instantly.ai/api/v2/campaigns/analytics', {
@@ -86,20 +84,17 @@ app.get('/api/campaigns', async (req, res) => {
     console.log('Fetched Campaigns Data:', response.data); // Log raw data
 
     // Ensure the frontend gets properly structured data
-    const campaigns = response.data.map((campaign) => ({
-      id: campaign.campaign_id, // Correct key name
-      name: campaign.campaign_name,
-      leads: campaign.leads_count,
-      contacted: campaign.contacted_count,
-      open: campaign.open_count,
-      reply: campaign.reply_count,
-      bounced: campaign.bounced_count,
-      unsubscribed: campaign.unsubscribed_count,
-      completed: campaign.completed_count,
-      sent: campaign.emails_sent_count,
-      opportunities: campaign.total_opportunities,
-      opportunity_value: campaign.total_opportunity_value,
-    }));
+    const campaigns = await Promise.all(
+      response.data.map(async (campaign) => {
+        const details = await fetchCampaignDetails(campaign.campaign_id);
+        return {
+          id: campaign.campaign_id, // Correct key name
+          name: campaign.campaign_name,
+          status: details ? details.status : undefined, // Add status
+          email_list: details ? details.email_list : undefined, // Add mailboxes associated
+        };
+      })
+    );
 
     console.log('Formatted Campaigns Data Sent to Frontend:', campaigns);
     res.json(campaigns);
@@ -109,8 +104,8 @@ app.get('/api/campaigns', async (req, res) => {
   }
 });
 
-// Endpoint to fetch campaign analytics
-app.get('/api/campaigns/analytics', async (req, res) => {
+// Endpoint to fetch campaign analytics (protected by token verification)
+app.get('/api/campaigns/analytics', verifyToken, async (req, res) => {
   const { id, start_date, end_date } = req.query;
   console.log(`Fetching analytics for Campaign ID: ${id}, Start Date: ${start_date}, End Date: ${end_date}`);
 
@@ -125,37 +120,50 @@ app.get('/api/campaigns/analytics', async (req, res) => {
       }
     );
 
-    // Fetch campaign analytics WITHOUT date parameters to get open rate
+    // Fetch campaign analytics WITHOUT date parameters to get open rate and campaign details
     const openRateResponse = await axios.get(`https://api.instantly.ai/api/v2/campaigns/analytics?id=${id}`, {
       headers: {
         Authorization: `Bearer ${API_KEY}`,
       },
     });
 
-    const formattedData = response.data.map((campaign) => {
-      // Find the corresponding campaign in the open rate response
-      const openRateCampaign = openRateResponse.data.find((c) => c.campaign_id === campaign.campaign_id);
+    const campaignData = response.data[0]; // Assuming the response contains only one campaign
+    const openRateData = openRateResponse.data[0]; // Assuming the response contains only one campaign
 
-      // Calculate Open Rate using data without date parameters
-      const openRate = openRateCampaign
-        ? (openRateCampaign.open_count / openRateCampaign.contacted_count) * 100 || 0
-        : 0;
+    // Calculate Open Rate using data without date parameters
+    const openRate = (openRateData.open_count / openRateData.contacted_count) * 100 || 0;
 
-      return {
-        'Campaign Name': campaign.campaign_name,
-        'Campaign ID': campaign.campaign_id,
-        'Leads Count': campaign.leads_count,
-        'Contacted Count': campaign.contacted_count,
-        'Open Count': campaign.open_count,
-        'Reply Count': campaign.reply_count,
-        'Bounced Count': campaign.bounced_count,
-        'Unsubscribed Count': campaign.unsubscribed_count,
-        'Completed Count': campaign.completed_count,
-        'Emails Sent Count': campaign.emails_sent_count,
-        'New Leads Contacted Count': campaign.new_leads_contacted_count,
-        'Open Rate (%)': openRate.toFixed(2),
-      };
-    });
+    // Calculate Delivered Emails
+    const delivered = campaignData.emails_sent_count - campaignData.bounced_count;
+
+    // Calculate Reply Rate
+    const replyRate = (campaignData.reply_count / campaignData.emails_sent_count) * 100 || 0;
+
+    // Calculate Bounce Rate
+    const bounceRate = (campaignData.bounced_count / campaignData.emails_sent_count) * 100 || 0;
+
+    // Fetch campaign details from the openRateResponse
+    const campaignDetails = {
+      status: openRateData.campaign_status,
+      email_list: openRateData.email_list,
+    };
+
+    // Format the data to be sent to the frontend
+    const formattedData = {
+      Date: `${start_date} to ${end_date}`,
+      'Campaign Name': campaignData.campaign_name,
+      'Campaign Status': campaignDetails.status,
+      'Mailboxes Associated': campaignDetails.email_list,
+      'New Prospects Contacted': campaignData.new_leads_contacted_count,
+      'Total Emails Sent': campaignData.emails_sent_count,
+      'Delivered': delivered,
+      'Mails Opened': campaignData.open_count,
+      'Open Rate (%)': openRate.toFixed(2),
+      'Responded': campaignData.reply_count,
+      'Reply Rate (%)': replyRate.toFixed(2),
+      'Bounced': campaignData.bounced_count,
+      'Bounce Rate (%)': bounceRate.toFixed(2),
+    };
 
     console.log('Formatted Analytics Data:', formattedData);
     res.json(formattedData);
