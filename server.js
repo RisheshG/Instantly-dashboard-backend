@@ -7,18 +7,15 @@ const bodyParser = require('body-parser');
 const app = express();
 const PORT = 5001;
 
-// Initialize Firebase Admin SDK
-const serviceAccount = require('./instantly-dashboard-firebase-adminsdk-fbsvc-3c37b82e50.json'); // Replace with your service account file path
+const serviceAccount = require('./instantly-dashboard-firebase-adminsdk-fbsvc-3c37b82e50.json');
 
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
 });
 
-// Middleware
 app.use(cors());
 app.use(bodyParser.json());
 
-// Configure CORS to allow requests from your frontend
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*'); // Allow all domains
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
@@ -33,7 +30,7 @@ const API_KEY = 'MWYzODNlMWYtYmM4YS00YjQ5LWExMDUtNzQ0MmZkMmRiODJhOkVqREpJSldjSFZ
 
 // Middleware to verify Firebase ID token
 const verifyToken = async (req, res, next) => {
-  const idToken = req.headers.authorization?.split('Bearer ')[1]; // Extract token from Authorization header
+  const idToken = req.headers.authorization?.split('Bearer ')[1]; 
 
   if (!idToken) {
     return res.status(401).json({ error: 'Unauthorized: No token provided' });
@@ -41,7 +38,7 @@ const verifyToken = async (req, res, next) => {
 
   try {
     const decodedToken = await admin.auth().verifyIdToken(idToken);
-    req.user = decodedToken; // Attach the decoded user information to the request object
+    req.user = decodedToken; 
     next();
   } catch (error) {
     console.error('Error verifying token:', error);
