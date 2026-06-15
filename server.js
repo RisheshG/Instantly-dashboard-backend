@@ -26,7 +26,7 @@ app.use((req, res, next) => {
   next();
 });
 
-const API_KEY = 'MWYzODNlMWYtYmM4YS00YjQ5LWExMDUtNzQ0MmZkMmRiODJhOkFPR1JScE1scHJ3Zg==';
+const API_KEY = 'MWYzODNlMWYtYmM4YS00YjQ5LWExMDUtNzQ0MmZkMmRiODJhOk9teHZ0ZFBSY2t4ZQ==';
 
 // Middleware to verify Firebase ID token
 const verifyToken = async (req, res, next) => {
